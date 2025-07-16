@@ -5,6 +5,8 @@ from flask import Flask
 import os
 import asyncio
 import threading
+import requests
+import time
 
 # === SERVIDOR WEB PARA RENDER ===
 app = Flask(__name__)
@@ -13,8 +15,12 @@ app = Flask(__name__)
 def home():
     return 'Bot is running on Render!'
 
+@app.route('/ping')
+def ping():
+    return 'pong', 200
+
 def run_web():
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 500))
     app.run(host='0.0.0.0', port=port)
 
 # === FUNCIONES DEL BOT ===
@@ -61,7 +67,6 @@ async def loguserbot():
         return
 
     client = TelegramClient(session_name, api_id, api_hash)
-
     await client.connect()
 
     if not await client.is_user_authorized():
@@ -100,7 +105,7 @@ async def loguserbot():
                             await client.send_message(os.getenv("LOGS_CHANNEL"),
                                                       f'<b>Mensaje enviado a {i["group_name"]}</b>',
                                                       parse_mode="HTML")
-                            await asyncio.sleep(10)
+                            await asyncio.sleep(5)
                         if j == 3:
                             break
                     await client.send_message(os.getenv("LOGS_CHANNEL"), f'<b>RONDA ACABADA</b>', parse_mode="HTML")
@@ -108,13 +113,34 @@ async def loguserbot():
         except Exception as e:
             print(f"Error en el ciclo principal: {e}")
 
+# === FUNCIONES PARA MANTENER RENDER ACTIVO ===
+def auto_ping():
+    while True:
+        try:
+            url = os.getenv("SELF_URL", "https://telegram-spam-bot1.onrender.com/")
+            print(f"Auto-ping to {url}")
+            requests.get(url)
+        except Exception as e:
+            print(f"Error en autoping: {e}")
+        time.sleep(300)  # cada 5 minutos
+
 # === INICIO DE LA APLICACIÓN ===
 def start_bot():
-    asyncio.run(loguserbot())
+    try:
+        asyncio.run(loguserbot())
+    except Exception as e:
+        print(f"Error crítico en loguserbot: {e}")
 
 if __name__ == "__main__":
-    # Inicia el bot en un hilo separado
-    threading.Thread(target=start_bot).start()
+    # Inicia servidor web
+    threading.Thread(target=run_web, daemon=True).start()
 
-    # Inicia el servidor web (requerido por Render)
-    run_web()
+    # Inicia el bot
+    threading.Thread(target=start_bot, daemon=True).start()
+
+    # Inicia autoping para mantener Render activo
+    threading.Thread(target=auto_ping, daemon=True).start()
+
+    # Mantiene el hilo principal vivo para que no termine el programa
+    while True:
+        time.sleep(1)
